@@ -1,0 +1,85 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PDF Summarizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="images/icon.png" type="image/png"> -->
+    <script src="script.js" defer></script>
+
+</head>
+<body>
+    <div class="container">
+
+        <!-- Intro Section -->
+        <div class="intro-container">
+            <h1>Welcome to PDF Summarizer</h1>
+            <p>Upload your PDF and let our AI generate a concise summary using advanced RAG technology.  
+            Get started by clicking below!</p>
+            <a href="#uploadCard" class="upload-button">Begin</a>
+        </div>
+
+        <!-- Header -->
+        <header class="header">
+            <h1>PDF Summarizer</h1>
+            <p>Upload your PDF document and let our AI generate a concise summary using advanced RAG technology</p>
+        </header>
+        
+        <!-- Main Content -->
+        <main>
+            <div class="card" id="uploadCard">
+                <h2 class="card-title">Upload Document</h2>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📄</div>
+                    <p class="upload-text">Drag & drop your PDF file here or click to browse</p>
+                    <div class="upload-button">Choose File</div>
+                    <input type="file" id="fileInput" accept=".pdf" style="display:none;">
+                </div>
+                
+                <div class="file-info hidden" id="fileInfo">
+                    <h3>File Details</h3>
+                    <div class="file-details" id="fileDetails">
+                        <!-- File details will be inserted here -->
+                    </div>
+                    
+                    <div class="progress-bar">
+                        <div class="progress" id="progressBar"></div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button class="button" id="summarizeBtn" disabled>
+                            <span id="buttonText">Analyze Document</span>
+                        </button>
+                        <button class="button" id="resetBtn">Reset</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Summary Section -->
+            <div class="card summary-area hidden" id="summaryArea">
+				<h3 class="card-title">Document Information</h3>
+				<div class="summary-content" id="summaryContent"></div>
+			</div>
+			
+			<div class="card followup-area hidden" id="followupArea">
+				<h3 class="card-title">Ask Questions</h3>
+				<div class="qa-input">
+					<input type="text" id="questionInput" placeholder="Ask a question...">
+					<button class="button" id="askBtn">Ask</button>
+				</div>
+				<div class="qa-response" id="qaResponse"></div>
+			</div>
+			
+			
+			
+        </main>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>PDF Summarizer using RAG Technology • Powered by Gemini AI</p>
+        </footer>
+    </div>
+</body>
+</html>
