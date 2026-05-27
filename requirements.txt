@@ -1,0 +1,8 @@
+flask
+flask-cors
+PyPDF2
+python-dotenv
+google-genai
+langgraph
+langchain-text-splitters
+chromadb
