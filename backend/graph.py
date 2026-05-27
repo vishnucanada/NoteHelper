@@ -104,10 +104,12 @@ def synthesizer_node(state: AgentState) -> dict:
     )
     try:
         raw = _strip_fences(ask_gemini(prompt))
-        parsed = json.loads(raw)
-        answer = parsed.get("answer", raw)
-    except Exception:
-        answer = "I had trouble generating a structured answer; please try again."
+        try:
+            answer = json.loads(raw).get("answer", raw)
+        except json.JSONDecodeError:
+            answer = raw
+    except Exception as e:
+        answer = f"Error generating answer: {e}"
     return {"answer": answer, "consulted": consulted}
 
 
