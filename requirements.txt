@@ -3,6 +3,8 @@ flask-cors
 PyPDF2
 python-dotenv
 google-genai
-langgraph
-langchain-text-splitters
+# Pin langgraph stack to <1.0 — 1.x pulls langchain-protocol which requires Python 3.13.
+langgraph<1.0
+langchain-core<1.0
+langchain-text-splitters<1.0
 chromadb

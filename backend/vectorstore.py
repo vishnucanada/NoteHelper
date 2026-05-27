@@ -14,7 +14,7 @@ _PERSIST_DIR = Path(__file__).parent.parent / "chroma_db"
 _PERSIST_DIR.mkdir(exist_ok=True)
 _DOC_INDEX_PATH = _PERSIST_DIR / "documents.json"
 _COLLECTION_NAME = "library"
-_EMBED_MODEL = "text-embedding-004"
+_EMBED_MODEL = "gemini-embedding-001"
 
 _gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
