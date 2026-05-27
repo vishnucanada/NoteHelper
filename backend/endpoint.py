@@ -1,132 +1,115 @@
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-import PyPDF2
-import io
 import json
-from gemini_ai import summarize_this, ask_prompt
 import re
 
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+from chunker import chunk_pdf, new_doc_id
+from gemini_ai import summarize_this
+from graph import answer_question
+from vectorstore import (
+    add_document,
+    delete_document,
+    get_document,
+    list_documents,
+)
+
 app = Flask(__name__)
-# Enable CORS for all routes with specific origins
-CORS(app, origins=["http://127.0.0.1:5500", "http://localhost:5500"])
+CORS(app, origins=[
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:5000",
+    "http://localhost:5000",
+])
 
-# Simple in-memory storage for demonstration
-messages = []
 
-def clean_json(text):
-    text = re.sub(r'^```json\s*|\s*```$', '', text, flags=re.MULTILINE)
-    text = text.strip()
-    return text
-@app.route('/message', methods=['GET', 'POST', 'OPTIONS'])
-def handle_message():
-    if request.method == 'OPTIONS':
-        # Handle preflight requests
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-        return response
-    
-    if request.method == 'GET':
-        # GET - Retrieve all messages
-        response = jsonify({
-            'messages': messages,
-            'count': len(messages)
-        })
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        return response
-    
-    elif request.method == 'POST':
-        # Check if a file was uploaded
-        if 'file' not in request.files:
-            response = jsonify({'error': 'No file uploaded'})
-            response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-            return response, 400
-        
-        file = request.files['file']
-        
-        # Check if the file is a PDF
-        if file.filename == '' or not file.filename.lower().endswith('.pdf'):
-            response = jsonify({'error': 'Invalid file type. Please upload a PDF'})
-            response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-            return response, 400
-        
-        try:
-            # Read and process the PDF
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file.read()))
-            text = ""
-            
-            # Extract text from each page
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-            
-            # For demonstration, just return the first 500 characters
-            #summary_text = text[:500] + "..." if len(text) > 500 else text
-            ai_response = summarize_this(text)
-            ai_response_json = clean_json(ai_response)
-            print(ai_response_json)
-            ai_response_json = json.loads(ai_response_json)
-            # Create a response message
-            new_message = {
-                'id': len(messages) + 1,
-                'text': ai_response_json,
-                'filename': file.filename
-            }
-            
-            messages.append(new_message)
-            response = jsonify({'message': 'PDF processed successfully', 'data': new_message})
-            response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-            return response, 201
-            
-        except Exception as e:
-            response = jsonify({'error': f'Failed to process PDF: {str(e)}'})
-            response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-            return response, 500
-@app.route('/followup', methods=['POST', 'OPTIONS'])
-def followup():
-    if request.method == 'OPTIONS':
-        # Preflight response
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        return response
+def _clean_json(text: str) -> str:
+    return re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE).strip()
 
-    data = request.get_json()
-    question = data.get("question", "")
 
-    if not question:
-        response = jsonify({'error': 'No question provided'})
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        return response, 400
+@app.route("/message", methods=["POST"])
+def upload_document():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    if file.filename == "" or not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Invalid file type. Please upload a PDF"}), 400
 
     try:
-        # Get AI answer
-        ai_answer = ask_prompt(question)
-        print("Raw AI Answer:", ai_answer)
-        
-        # Clean and parse JSON
-        cleaned_answer = clean_json(ai_answer)
+        file_bytes = file.read()
+        doc_id = new_doc_id()
+        chunks, full_text = chunk_pdf(file_bytes, doc_id, file.filename)
+
+        if not chunks:
+            return jsonify({"error": "Could not extract text from PDF"}), 400
+
+        summary_raw = summarize_this(full_text)
         try:
-            ai_answer_json = json.loads(cleaned_answer)
-        except json.JSONDecodeError as e:
-            return jsonify({
-                'error': 'Failed to parse AI response as JSON',
-                'raw_response': ai_answer
-            }), 500
-        
-        # Return consistent response structure
-        response = jsonify({
-            'message': 'Question answered successfully',
-            'data': ai_answer_json
-        })
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        return response, 200
-        
+            summary = json.loads(_clean_json(summary_raw))
+        except json.JSONDecodeError:
+            summary = {
+                "one_sentence_explanation": "(summary unavailable)",
+                "brief_summary": summary_raw[:500],
+                "key_take_aways": "",
+            }
+
+        add_document(doc_id, file.filename, summary, chunks)
+
+        return jsonify({
+            "message": "PDF processed successfully",
+            "data": {
+                "doc_id": doc_id,
+                "filename": file.filename,
+                "num_chunks": len(chunks),
+                "text": summary,
+            },
+        }), 201
     except Exception as e:
-        response = jsonify({'error': f'Failed to process question: {str(e)}'})
-        response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
-        return response, 500
-    
-if __name__ == '__main__':
+        return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
+
+
+@app.route("/documents", methods=["GET"])
+def get_documents():
+    return jsonify({"documents": list_documents()})
+
+
+@app.route("/documents/<doc_id>", methods=["DELETE"])
+def remove_document(doc_id: str):
+    if not get_document(doc_id):
+        return jsonify({"error": "Document not found"}), 404
+    delete_document(doc_id)
+    return jsonify({"message": "Deleted", "doc_id": doc_id})
+
+
+@app.route("/followup", methods=["POST"])
+def followup():
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "No question provided"}), 400
+
+    try:
+        result = answer_question(question)
+        return jsonify({
+            "message": "Question answered successfully",
+            "data": {
+                "answer": result["answer"],
+                "consulted": result["consulted"],
+                "routed_doc_ids": result["routed_doc_ids"],
+                "chunks": [
+                    {
+                        "filename": c["filename"],
+                        "page": c["page"],
+                        "text": c["text"],
+                    }
+                    for c in result["chunks"]
+                ],
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
+
+
+if __name__ == "__main__":
     app.run(debug=True, port=5000)
