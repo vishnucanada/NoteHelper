@@ -3,61 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <title>Note Helper</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="images/icon.png" type="image/png">
     <script src="script.js" defer></script>
 </head>
 <body>
-    <div class="container">
+    <div class="app">
 
-        <!-- Intro Section -->
-        <div class="intro-container">
-            <h1>Welcome to Note Helper</h1>
-            <p>Upload an entire semester of PDFs. An agentic RAG pipeline routes each question to the right documents, retrieves the relevant chunks, and synthesizes an answer.</p>
-            <a href="#uploadCard" class="upload-button">Begin</a>
-        </div>
-
-        <header class="header">
-            <h1>Note Helper</h1>
-            <p>Multi-document agentic RAG study assistant</p>
-        </header>
-
-        <main>
-            <div class="card" id="uploadCard">
-                <h2 class="card-title">Add Documents to Library</h2>
-
-                <div class="upload-area" id="uploadArea">
-                    <div class="upload-icon">📄</div>
-                    <p class="upload-text">Drag &amp; drop one or more PDFs here, or click to browse</p>
-                    <div class="upload-button">Choose Files</div>
-                    <input type="file" id="fileInput" accept=".pdf" multiple style="display:none;">
-                </div>
-
-                <div id="uploadQueue" class="upload-queue"></div>
-            </div>
-
-            <div class="card" id="libraryCard">
-                <h2 class="card-title">Your Library <span id="libraryCount" class="badge-muted">0 docs</span></h2>
-                <div id="libraryList" class="library-list">
-                    <p class="empty-state">No documents yet. Upload a PDF above to get started.</p>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-mark">NH</div>
+                <div class="brand-text">
+                    <h1>Note Helper</h1>
+                    <p>Agentic RAG · LangGraph</p>
                 </div>
             </div>
 
-            <div class="card followup-area" id="followupArea">
-                <h3 class="card-title">Ask Your Library</h3>
-                <p class="hint">Your question gets routed to the most relevant documents in your library.</p>
-                <div class="qa-input">
-                    <input type="text" id="questionInput" placeholder="Ask a question across all your notes...">
-                    <button class="button" id="askBtn">Ask</button>
+            <div class="upload-area" id="uploadArea">
+                <input type="file" id="fileInput" accept=".pdf" multiple hidden>
+                <div class="upload-icon">＋</div>
+                <div class="upload-title">Add PDFs to library</div>
+                <div class="upload-sub">Drag &amp; drop or click</div>
+            </div>
+
+            <div id="uploadQueue" class="upload-queue"></div>
+
+            <div class="library-header">
+                <span class="library-label">Library</span>
+                <span id="libraryCount" class="count-pill">0</span>
+            </div>
+
+            <div id="libraryList" class="library-list">
+                <p class="empty-state">No documents yet.</p>
+            </div>
+
+            <div class="sidebar-footer">
+                <span class="status-dot"></span>
+                <span>Backend ready</span>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <header class="topbar">
+                <div class="topbar-title">
+                    <span class="topbar-emoji">💬</span>
+                    <span>Ask Your Library</span>
                 </div>
-                <div class="qa-response" id="qaResponse"></div>
+                <div class="topbar-meta" id="topbarMeta">Routes your question to the relevant docs</div>
+            </header>
+
+            <div class="thread" id="thread">
+                <div class="welcome" id="welcome">
+                    <div class="welcome-icon">📚</div>
+                    <h2>Upload PDFs, then ask anything</h2>
+                    <p>A router agent picks the right documents from your library, retrievers fetch the matching chunks in parallel, and the synthesizer grounds its answer in what you uploaded.</p>
+                    <div class="welcome-chips">
+                        <span class="chip">🧭 Router</span>
+                        <span class="chip">📥 Parallel retrievers</span>
+                        <span class="chip">✨ Synthesizer</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="composer">
+                <div class="composer-inner">
+                    <textarea
+                        id="questionInput"
+                        placeholder="Ask a question across your library…  (Cmd/Ctrl+Enter to send)"
+                        rows="1"
+                    ></textarea>
+                    <button class="send-btn" id="askBtn" aria-label="Send">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14M13 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="composer-hint">Powered by Gemini · grounded in your uploaded PDFs</div>
             </div>
         </main>
-
-        <footer class="footer">
-            <p>Note Helper • Multi-doc RAG with LangGraph + ChromaDB + Gemini</p>
-        </footer>
     </div>
 </body>
 </html>
