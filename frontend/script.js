@@ -33,10 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ---------- composer ---------- */
     questionInput.addEventListener('input', autoresize);
     questionInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            askQuestion();
-        } else if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             askQuestion();
         }
@@ -45,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshLibrary();
 
-    /* ---------- handlers ---------- */
+    /* ---------- upload handlers ---------- */
     async function handleFiles(files) {
         const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
         if (pdfs.length === 0) {
@@ -64,14 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="queue-status shimmer-text">indexing…</span>
         `;
         uploadQueue.appendChild(row);
-
         try {
             const formData = new FormData();
             formData.append('file', file);
             const res = await fetch(`${API_BASE}/message`, { method: 'POST', body: formData });
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || `Server error: ${res.status}`);
-
             row.className = 'queue-row done';
             row.querySelector('.queue-status').textContent = `✓ ${result.data.num_chunks} chunks`;
             row.querySelector('.queue-status').classList.remove('shimmer-text');
@@ -89,16 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
             const docs = result.documents || [];
             libraryCount.textContent = docs.length;
-
             if (docs.length === 0) {
                 libraryList.innerHTML = '<p class="empty-state">No documents yet.</p>';
                 return;
             }
-
             libraryList.innerHTML = '';
-            for (const doc of docs) {
-                libraryList.appendChild(renderDocCard(doc));
-            }
+            for (const doc of docs) libraryList.appendChild(renderDocCard(doc));
         } catch (err) {
             libraryList.innerHTML = `<p class="empty-state error-state">${escapeHtml(err.message)}</p>`;
         }
@@ -112,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const takeaways = Array.isArray(summary.key_take_aways)
             ? summary.key_take_aways.map(t => `• ${escapeHtml(t)}`).join('<br>')
             : escapeHtml(summary.key_take_aways || '');
-
         card.innerHTML = `
             <div class="doc-header">
                 <span class="doc-icon">📄</span>
@@ -150,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /* ---------- Q&A thread ---------- */
+    /* ---------- Q&A: SSE-streamed graph ---------- */
     async function askQuestion() {
         const question = questionInput.value.trim();
         if (!question || askBtn.disabled) return;
@@ -161,15 +151,19 @@ document.addEventListener('DOMContentLoaded', () => {
         turn.className = 'qa-turn';
         turn.innerHTML = `
             <div class="qa-question">${escapeHtml(question)}</div>
-            <div class="qa-answer loading">
-                <div class="routing-trace">
-                    <span class="trace-pill active" data-step="route">🧭 routing</span>
+            <div class="qa-answer loading" data-turn>
+                <div class="routing-trace" data-trace>
+                    <span class="trace-pill active" data-step="router">🧭 routing</span>
                     <span class="trace-arrow">→</span>
-                    <span class="trace-pill" data-step="retrieve">📥 retrieving</span>
+                    <span class="trace-pill" data-step="retriever">📥 retrieving</span>
                     <span class="trace-arrow">→</span>
-                    <span class="trace-pill" data-step="synth">✨ synthesizing</span>
+                    <span class="trace-pill" data-step="generator">✨ generating</span>
+                    <span class="trace-arrow">→</span>
+                    <span class="trace-pill" data-step="critic">✅ verifying</span>
                 </div>
-                <div class="answer-body shimmer-text">Routing your question to the relevant documents…</div>
+                <div class="retry-indicator" data-retry hidden></div>
+                <div class="answer-body shimmer-text" data-answer>Routing your question to the relevant documents…</div>
+                <div data-tail></div>
             </div>
         `;
         thread.appendChild(turn);
@@ -179,28 +173,103 @@ document.addEventListener('DOMContentLoaded', () => {
         autoresize();
         askBtn.disabled = true;
 
-        // staged loading animation (purely cosmetic until backend returns)
-        const stagedTimers = animateTrace(turn);
+        const answerEl = turn.querySelector('[data-turn]');
+        const traceEl  = turn.querySelector('[data-trace]');
+        const bodyEl   = turn.querySelector('[data-answer]');
+        const retryEl  = turn.querySelector('[data-retry]');
+        const tailEl   = turn.querySelector('[data-tail]');
+
+        const ctx = {
+            chunksAccumulated: 0,
+            lastCritic: null,
+            finalAnswer: '',
+            finalChunks: [],
+            finalConsulted: [],
+            finalCitations: [],
+            finalDocs: [],
+        };
+
+        function setActive(step, label) {
+            traceEl.querySelectorAll('.trace-pill').forEach(p => p.classList.remove('active'));
+            const pill = traceEl.querySelector(`[data-step="${step}"]`);
+            if (pill) {
+                pill.classList.add('active');
+                if (label) pill.textContent = label;
+            }
+        }
+
+        function markDone(step, label) {
+            const pill = traceEl.querySelector(`[data-step="${step}"]`);
+            if (pill) {
+                pill.classList.remove('active');
+                pill.classList.add('done');
+                if (label) pill.textContent = label;
+            }
+        }
 
         try {
-            const res = await fetch(`${API_BASE}/followup`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question }),
+            await streamSSE(`${API_BASE}/followup`, { question }, (evt) => {
+                switch (evt.node) {
+                    case 'router':
+                        markDone('router', `🧭 routed → ${evt.doc_ids.length} doc${evt.doc_ids.length === 1 ? '' : 's'}`);
+                        setActive('retriever', `📥 retrieving (0)`);
+                        ctx.finalDocs = evt.doc_ids;
+                        bodyEl.textContent = 'Retrieving relevant chunks…';
+                        break;
+                    case 'retriever':
+                        ctx.chunksAccumulated += evt.chunks_added || 0;
+                        setActive('retriever', `📥 retrieving (${ctx.chunksAccumulated})`);
+                        break;
+                    case 'generator':
+                        markDone('retriever', `📥 ${ctx.chunksAccumulated} chunks`);
+                        setActive('generator', '✨ generating');
+                        bodyEl.textContent = 'Synthesizing the answer…';
+                        ctx.finalAnswer = evt.answer || '';
+                        ctx.finalConsulted = evt.consulted || [];
+                        break;
+                    case 'critic': {
+                        markDone('generator', '✨ generated');
+                        const okPill = evt.verified ? '✅ verified' : '⚠ unverified';
+                        setActive('critic', okPill);
+                        ctx.lastCritic = evt;
+                        ctx.finalCitations = evt.citations || [];
+                        if (!evt.verified && evt.retry_count < 2) {
+                            // about to retry — surface a retry indicator
+                            const used = evt.retry_count;
+                            retryEl.hidden = false;
+                            retryEl.innerHTML = `<span class="retry-chip">↻ ${used === 1 ? 'first' : 'second'} retry: ${evt.failed_claims.length} claim(s) failed</span>`;
+                            // reset trace for retry
+                            setTimeout(() => {
+                                traceEl.querySelectorAll('.trace-pill').forEach(p => {
+                                    p.classList.remove('done');
+                                });
+                                ['generator', 'critic'].forEach(s => {
+                                    const pill = traceEl.querySelector(`[data-step="${s}"]`);
+                                    if (pill) pill.textContent = ({generator: '✨ generating', critic: '✅ verifying'})[s];
+                                });
+                                setActive('retriever', `📥 retrieving (retry)`);
+                                bodyEl.textContent = 'Rewriting query and re-retrieving…';
+                            }, 250);
+                        }
+                        break;
+                    }
+                    case 'rewriter':
+                        // soft indicator; the next retriever events will follow
+                        break;
+                    case 'done':
+                        renderFinal(turn, ctx);
+                        break;
+                    case 'error':
+                        throw new Error(evt.message || 'graph error');
+                }
             });
-            const result = await res.json();
-            stagedTimers.forEach(clearTimeout);
-
-            if (!res.ok) throw new Error(result.error || `Server error: ${res.status}`);
-            renderAnswer(turn, result.data);
-            highlightConsulted(result.data.consulted || []);
+            // safety: if no 'done' arrived for some reason
+            if (!turn.classList.contains('rendered')) renderFinal(turn, ctx);
         } catch (err) {
-            stagedTimers.forEach(clearTimeout);
-            const answer = turn.querySelector('.qa-answer');
-            answer.classList.remove('loading');
-            answer.classList.add('error');
-            answer.querySelector('.answer-body').classList.remove('shimmer-text');
-            answer.querySelector('.answer-body').textContent = `Error: ${err.message}`;
+            answerEl.classList.remove('loading');
+            answerEl.classList.add('error');
+            bodyEl.classList.remove('shimmer-text');
+            bodyEl.textContent = `Error: ${err.message}`;
         } finally {
             askBtn.disabled = false;
             questionInput.focus();
@@ -208,93 +277,147 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function animateTrace(turn) {
-        const body = turn.querySelector('.answer-body');
-        const pills = turn.querySelectorAll('.trace-pill');
-        const timers = [];
-        timers.push(setTimeout(() => {
-            pills[0].classList.remove('active');
-            pills[1].classList.add('active');
-            body.textContent = 'Retrieving relevant chunks…';
-        }, 900));
-        timers.push(setTimeout(() => {
-            pills[1].classList.remove('active');
-            pills[2].classList.add('active');
-            body.textContent = 'Synthesizing the answer…';
-        }, 2100));
-        return timers;
-    }
+    function renderFinal(turn, ctx) {
+        if (turn.classList.contains('rendered')) return;
+        turn.classList.add('rendered');
+        const answerEl = turn.querySelector('[data-turn]');
+        const bodyEl   = turn.querySelector('[data-answer]');
+        const tailEl   = turn.querySelector('[data-tail]');
+        const retryEl  = turn.querySelector('[data-retry]');
 
-    function renderAnswer(turn, data) {
-        const answer = turn.querySelector('.qa-answer');
-        answer.classList.remove('loading');
+        answerEl.classList.remove('loading');
+        bodyEl.classList.remove('shimmer-text');
 
-        const routed = data.routed_doc_ids?.length || 0;
-        const consulted = data.consulted || [];
-        const chunks = data.chunks || [];
+        // Render answer with citation superscripts
+        bodyEl.innerHTML = renderAnswerHtml(ctx.finalAnswer, ctx.finalCitations);
 
-        const consultedBadges = consulted.map(c =>
-            `<span class="badge">${escapeHtml(c.filename)}</span>`
-        ).join('');
+        // Verification badge
+        const critic = ctx.lastCritic;
+        const badgeHtml = critic
+            ? (critic.verified
+                ? `<span class="verify-badge ok">✓ verified · ${critic.citations.length} citation${critic.citations.length === 1 ? '' : 's'}</span>`
+                : `<span class="verify-badge warn">⚠ best-effort · ${critic.retry_count} retr${critic.retry_count === 1 ? 'y' : 'ies'} used</span>`)
+            : '';
 
-        const chunksHtml = chunks.length ? `
-            <button class="chunks-toggle" data-action="toggle-chunks">Show retrieved chunks (${chunks.length})</button>
-            <div class="chunks-list" hidden>
-                ${chunks.map(c => `
-                    <div class="chunk-item">
-                        <div class="chunk-meta">${escapeHtml(c.filename)} · page ${c.page}</div>
-                        ${escapeHtml(c.text)}
+        // Consulted docs
+        const consultedHtml = ctx.finalConsulted.length ? `
+            <div class="consulted-row">
+                <span class="consulted-label">Consulted</span>
+                ${ctx.finalConsulted.map(c => `<span class="badge">${escapeHtml(c.filename)}</span>`).join('')}
+                ${badgeHtml}
+            </div>` : (badgeHtml ? `<div class="consulted-row">${badgeHtml}</div>` : '');
+
+        // Citations detail (foldable)
+        const cits = ctx.finalCitations;
+        const citationsHtml = cits.length ? `
+            <button class="chunks-toggle" data-action="toggle-cits">Show citation evidence (${cits.length})</button>
+            <div class="chunks-list" data-cits hidden>
+                ${cits.map(c => `
+                    <div class="chunk-item ${c.supported ? '' : 'unsupported'}">
+                        <div class="chunk-meta">
+                            [${c.n}] ${escapeHtml(c.filename || '?')} ${c.page ? '· page ' + c.page : ''}
+                            <span class="${c.supported ? 'cite-ok' : 'cite-bad'}">${c.supported ? '✓ supported' : '✗ unsupported'}</span>
+                        </div>
+                        <div class="cit-claim"><em>Claim:</em> ${escapeHtml(c.claim)}</div>
+                        ${c.reason ? `<div class="cit-reason"><em>Note:</em> ${escapeHtml(c.reason)}</div>` : ''}
                     </div>
                 `).join('')}
-            </div>
-        ` : '';
+            </div>` : '';
 
-        answer.innerHTML = `
-            <div class="routing-trace">
-                <span class="trace-pill active">🧭 routed → ${routed} doc${routed === 1 ? '' : 's'}</span>
-                <span class="trace-arrow">→</span>
-                <span class="trace-pill active">📥 ${chunks.length} chunks</span>
-                <span class="trace-arrow">→</span>
-                <span class="trace-pill active">✨ synthesized</span>
-            </div>
-            <div class="answer-body">${escapeHtml(data.answer)}</div>
-            ${consulted.length ? `
-                <div class="consulted-row">
-                    <span class="consulted-label">Consulted</span>
-                    ${consultedBadges}
-                </div>` : ''}
-            ${chunksHtml}
-        `;
+        tailEl.innerHTML = consultedHtml + citationsHtml;
 
-        const toggle = answer.querySelector('[data-action="toggle-chunks"]');
-        if (toggle) {
-            const list = answer.querySelector('.chunks-list');
-            toggle.addEventListener('click', () => {
+        const citsToggle = tailEl.querySelector('[data-action="toggle-cits"]');
+        if (citsToggle) {
+            const list = tailEl.querySelector('[data-cits]');
+            citsToggle.addEventListener('click', () => {
                 const open = !list.hasAttribute('hidden');
                 if (open) {
                     list.setAttribute('hidden', '');
-                    toggle.textContent = `Show retrieved chunks (${chunks.length})`;
+                    citsToggle.textContent = `Show citation evidence (${cits.length})`;
                 } else {
                     list.removeAttribute('hidden');
-                    toggle.textContent = `Hide retrieved chunks`;
+                    citsToggle.textContent = `Hide citation evidence`;
                 }
             });
         }
-    }
 
-    function highlightConsulted(consulted) {
-        const ids = new Set(consulted.map(c => c.doc_id));
+        // Highlight consulted docs in sidebar (transient)
+        const ids = new Set(ctx.finalConsulted.map(c => c.doc_id));
         libraryList.querySelectorAll('.doc-card').forEach(card => {
             card.classList.toggle('consulted', ids.has(card.dataset.docId));
         });
         setTimeout(() => {
             libraryList.querySelectorAll('.doc-card.consulted').forEach(c => c.classList.remove('consulted'));
-        }, 4000);
+        }, 4500);
+
+        // Clear retry indicator after a beat
+        if (retryEl && !retryEl.hidden) {
+            setTimeout(() => { retryEl.hidden = true; }, 6000);
+        }
     }
 
-    function scrollToBottom() {
-        thread.scrollTop = thread.scrollHeight;
+    function renderAnswerHtml(answer, citations) {
+        const citByN = new Map();
+        for (const c of citations) {
+            if (!citByN.has(c.n)) citByN.set(c.n, c);
+        }
+        // Escape, then replace [N] tokens with superscript chips (after escape so brackets are literal)
+        let html = escapeHtml(answer);
+        html = html.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_, nums) => {
+            const parts = nums.split(',').map(s => s.trim());
+            return parts.map(n => {
+                const cit = citByN.get(parseInt(n, 10));
+                const ok = cit?.supported !== false;
+                const title = cit
+                    ? `${cit.filename || ''} p.${cit.page || '?'} — ${cit.supported ? 'supported' : 'unsupported'}`
+                    : `chunk ${n}`;
+                return `<sup class="cite ${ok ? '' : 'cite-bad'}" title="${escapeHtml(title)}">[${n}]</sup>`;
+            }).join('');
+        });
+        // preserve newlines as <br>
+        html = html.replace(/\n/g, '<br>');
+        return html;
     }
+
+    /* ---------- SSE consumer ---------- */
+    async function streamSSE(url, body, onEvent) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok || !res.body) {
+            let msg = `Server error: ${res.status}`;
+            try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+            throw new Error(msg);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let idx;
+            while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                const frame = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                const lines = frame.split('\n').filter(l => l.startsWith('data:'));
+                for (const line of lines) {
+                    const payload = line.slice(5).trim();
+                    if (!payload) continue;
+                    try {
+                        onEvent(JSON.parse(payload));
+                    } catch (e) {
+                        console.warn('Bad SSE chunk:', payload, e);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ---------- utility ---------- */
+    function scrollToBottom() { thread.scrollTop = thread.scrollHeight; }
 
     function autoresize() {
         questionInput.style.height = 'auto';

@@ -1,12 +1,12 @@
 import json
 import re
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
 
 from chunker import chunk_pdf, new_doc_id
 from gemini_ai import summarize_this
-from graph import answer_question
+from graph import answer_question, stream_answer
 from vectorstore import (
     add_document,
     delete_document,
@@ -84,32 +84,44 @@ def remove_document(doc_id: str):
 
 @app.route("/followup", methods=["POST"])
 def followup():
+    """SSE stream of graph events. Each event = one node completion."""
     data = request.get_json(silent=True) or {}
     question = (data.get("question") or "").strip()
     if not question:
         return jsonify({"error": "No question provided"}), 400
 
+    @stream_with_context
+    def generate():
+        try:
+            for event in stream_answer(question):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'node': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/followup/sync", methods=["POST"])
+def followup_sync():
+    """Non-streaming fallback. Same payload as before."""
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "No question provided"}), 400
     try:
         result = answer_question(question)
-        return jsonify({
-            "message": "Question answered successfully",
-            "data": {
-                "answer": result["answer"],
-                "consulted": result["consulted"],
-                "routed_doc_ids": result["routed_doc_ids"],
-                "chunks": [
-                    {
-                        "filename": c["filename"],
-                        "page": c["page"],
-                        "text": c["text"],
-                    }
-                    for c in result["chunks"]
-                ],
-            },
-        })
+        return jsonify({"message": "Question answered successfully", "data": result})
     except Exception as e:
         return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, threaded=True)

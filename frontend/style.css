@@ -482,6 +482,17 @@ button, input, textarea {
     color: var(--accent-2);
     border-color: var(--accent);
     background: var(--accent-bg);
+    animation: pulse 1.4s ease-in-out infinite;
+}
+.trace-pill.done {
+    color: var(--success);
+    border-color: rgba(52, 211, 153, 0.4);
+    background: rgba(52, 211, 153, 0.08);
+    animation: none;
+}
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+    50%      { box-shadow: 0 0 0 4px transparent; }
 }
 .trace-arrow {
     color: var(--text-dim);
@@ -560,6 +571,81 @@ button, input, textarea {
     font-size: 10px;
     color: var(--accent-2);
     margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.chunk-item.unsupported {
+    border-color: rgba(248, 113, 113, 0.3);
+    background: rgba(248, 113, 113, 0.06);
+}
+.cit-claim {
+    font-size: 12px;
+    color: var(--text);
+    margin: 6px 0 4px 0;
+}
+.cit-reason {
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+.cite-ok  { color: var(--success);  font-weight: 600; }
+.cite-bad { color: var(--danger);   font-weight: 600; }
+
+/* citation superscripts inline in the answer */
+sup.cite {
+    color: var(--accent-2);
+    font-size: 10px;
+    font-weight: 600;
+    margin: 0 1px;
+    padding: 1px 4px;
+    background: var(--accent-bg);
+    border-radius: 4px;
+    cursor: help;
+    font-family: var(--font-mono);
+}
+sup.cite.cite-bad {
+    color: var(--danger);
+    background: rgba(248, 113, 113, 0.12);
+}
+
+/* retry indicator */
+.retry-indicator {
+    margin-bottom: 10px;
+}
+.retry-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(251, 191, 36, 0.08);
+    color: var(--warning);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-mono);
+}
+
+/* verification badge in consulted row */
+.verify-badge {
+    margin-left: auto;
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    font-family: var(--font-mono);
+}
+.verify-badge.ok {
+    color: var(--success);
+    background: rgba(52, 211, 153, 0.08);
+    border-color: rgba(52, 211, 153, 0.3);
+}
+.verify-badge.warn {
+    color: var(--warning);
+    background: rgba(251, 191, 36, 0.08);
+    border-color: rgba(251, 191, 36, 0.3);
 }
 
 /* loading state */
