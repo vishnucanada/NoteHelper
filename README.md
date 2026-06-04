@@ -8,10 +8,13 @@ Built on **LangGraph + ChromaDB + Gemini**.
 
 - **Multi-Document Library:** Upload as many PDFs as you want. Each one is chunked, embedded with `gemini-embedding-001`, and persisted to a local ChromaDB vector store.
 - **Router Agent:** Every question first hits a router node that reads the catalog of uploaded docs and picks the relevant subset. Off-topic queries fall back to the full library; specific queries are routed surgically.
-- **Parallel Retrieval (Send fan-out):** The router dispatches one retriever node per selected document via LangGraph's `Send` API. Each retriever pulls top-k chunks for its doc in parallel; the synthesizer merges them into a single answer.
+- **Parallel Retrieval (Send fan-out):** The router dispatches one retriever node per selected document via LangGraph's `Send` API. Each retriever pulls top-k chunks for its doc in parallel.
+- **Inline Citations + Self-Correcting Critic Loop:** The generator emits answers with inline `[N]` citation tags. A critic node verifies each cited claim against its chunk; if any claim fails, a query rewriter refines the search and the graph loops back to retrieval (capped at 2 retries).
+- **Live SSE Streaming:** Each graph node emits a Server-Sent Event as it completes, so the UI animates the agent's progress in real time — routing → retrieving → generating → verifying — with retry indicators when the critic forces another pass.
+- **LangSmith-Ready:** Set `LANGCHAIN_TRACING_V2=true` + `LANGCHAIN_API_KEY` in `.env` and every graph run is traced automatically — no code changes needed.
 - **Per-Document Summaries:** On upload, Gemini generates a one-sentence explanation, brief summary, and key takeaways — all persisted alongside the chunks.
 - **Library Management UI:** See every doc you've uploaded, expand summaries inline, and delete docs you no longer need.
-- **Consulted-Doc Badges:** Every answer shows which documents the router actually consulted, so you can audit the reasoning trail.
+- **Consulted-Doc Badges + Citation Evidence:** Every answer shows which documents the router consulted, a verified/best-effort badge from the critic, and a foldable list of citation evidence (claim + chunk + supported/unsupported verdict).
 
 ## 🏗️ Architecture
 
@@ -28,15 +31,25 @@ Built on **LangGraph + ChromaDB + Gemini**.
                           │  ChromaDB Library   │
                           └─────────────────────┘
 
-  Question ──▶ Router ──┬─▶ Retriever(doc_a) ──┐
-                        ├─▶ Retriever(doc_b) ──┼─▶ Synthesizer ─▶ Answer
-                        └─▶ Retriever(doc_c) ──┘
+  Q ─▶ Router ─┬─▶ Retriever(doc_a) ─┐
+               ├─▶ Retriever(doc_b) ─┼─▶ Generator ─▶ Critic ──pass──▶ Answer
+               └─▶ Retriever(doc_c) ─┘                   │
+                                                         └──fail──▶ Rewriter
+                                                                     │
+                                                                     ▼
+                                                                 (loop back to Retriever)
+                                                                  max 2 retries
 ```
 
 State flows through a LangGraph `StateGraph` (`backend/graph.py`):
 - `router_node` — Gemini picks `doc_ids` based on doc summaries.
 - `retriever_node` — runs once per routed doc (parallel via `Send`); writes chunks back to shared state.
-- `synthesizer_node` — produces the final answer grounded in the merged chunks; reports which docs were consulted.
+- `generator_node` — produces the answer with inline `[N]` citation tags keyed to retrieved chunks.
+- `critic_node` — for each cited claim, asks Gemini whether the referenced chunk explicitly supports it. Bumps `retry_count` on failure.
+- `query_rewriter_node` — given the failed claims, rewrites the retrieval query to better target the missing evidence.
+- Conditional edge from `critic` → `END` if verified or retry cap reached, else → `rewriter` → `retriever` (re-fans out with the new query).
+
+Every node emits an SSE event as it completes, so the frontend can render the trace live.
 
 ## 📂 Project Structure
 
@@ -72,19 +85,20 @@ NoteHelper/
 | POST   | `/message`            | Upload a PDF — chunks, embeds, summarizes. |
 | GET    | `/documents`          | List all docs in the library.              |
 | DELETE | `/documents/<doc_id>` | Remove a doc and its chunks.               |
-| POST   | `/followup`           | Ask a question — runs the LangGraph.       |
+| POST   | `/followup`           | **SSE stream** — one event per graph node. |
+| POST   | `/followup/sync`      | Non-streaming fallback (single JSON).      |
 
-`/followup` returns:
-```json
-{
-  "data": {
-    "answer": "...",
-    "consulted": [{"doc_id": "...", "filename": "..."}],
-    "routed_doc_ids": ["...", "..."],
-    "chunks": [{"filename": "...", "page": 3, "text": "..."}]
-  }
-}
+`/followup` returns `text/event-stream`. Each frame is `data: { ... }\n\n` where the payload's `node` field tells you what just fired:
+
 ```
+data: {"node":"router","doc_ids":["..."],"query":"..."}
+data: {"node":"retriever","chunks_added":4}
+data: {"node":"generator","answer":"... [1] ... [2] ...","consulted":[...]}
+data: {"node":"critic","verified":true,"citations":[{"n":1,"claim":"...","supported":true,"reason":"...","filename":"...","page":3}],"retry_count":0}
+data: {"node":"done"}
+```
+
+`/followup/sync` returns the same shape compressed into a single JSON response under `data`.
 
 ## 📦 Installation & Local Setup
 
@@ -97,6 +111,11 @@ NoteHelper/
 2. **Set up your `.env`** in the project root with your Gemini API key:
    ```env
    GEMINI_API_KEY=your_google_gemini_api_key_here
+
+   # Optional — enable LangSmith tracing for the agentic graph
+   # LANGCHAIN_TRACING_V2=true
+   # LANGCHAIN_API_KEY=ls__your_langsmith_key
+   # LANGCHAIN_PROJECT=NoteHelper
    ```
 
 3. **Install dependencies:**
@@ -113,3 +132,9 @@ NoteHelper/
 5. **Serve the frontend** (VS Code Live Server on port `5500` is what CORS is configured for), or open `frontend/index.html` directly.
 
 6. Upload a few PDFs, then ask questions across them in the Q&A panel.
+
+## 🔮 Roadmap
+
+Phase 1 (multi-doc librarian with router agent) ✅
+Phase 2 (self-correcting citation critic loop + SSE streaming + LangSmith) ✅
+Phase 3 — **next**: knowledge-gap finder + ReAct external tools. When the critic still can't verify after retries on internal docs, the agent decides whether to call Gemini grounded search, Wikipedia, or arXiv, and merges external evidence into the answer.
