@@ -2,6 +2,8 @@
 
 Phase 1: router -> parallel retrievers -> synthesizer.
 Phase 2: generator emits [N] citations -> critic verifies -> rewriter loops on failure.
+Phase 3: planner decomposes multi-hop questions; an external-tools ReAct branch
+         reaches out to Wikipedia / arXiv when the internal library can't verify.
 """
 import json
 import operator
@@ -12,15 +14,19 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from gemini_ai import ask_gemini
+from tools import run_tool, select_tool
 from vectorstore import list_documents, retrieve
 
 
-MAX_RETRIES = 2  # critic loop cap (3 generator passes total: initial + 2 retries)
+MAX_RETRIES = 2     # critic loop cap (3 generator passes total: initial + 2 retries)
+MAX_SUBQ = 4        # planner won't decompose into more than this many sub-questions
+MAX_CONTEXT_CHUNKS = 12  # cap chunks fed to the generator after sub-question fan-out
 
 
 class AgentState(TypedDict, total=False):
     question: str                                   # original user question (immutable)
     query: str                                      # current retrieval query (rewritten across retries)
+    sub_questions: list[str]                        # planner decomposition (>=1 entries)
     doc_ids: list[str]                              # routed docs
     chunks: Annotated[list[dict], operator.add]     # accumulated across retries / parallel retrievers
     answer: str
@@ -29,6 +35,8 @@ class AgentState(TypedDict, total=False):
     retry_count: int
     consulted: list[dict]                           # [{doc_id, filename}]
     failed_claims: list[dict]
+    external_used: bool                             # whether the ReAct external branch already fired
+    tool_used: dict                                 # {tool, query, reason} from the last external lookup
 
 
 def _strip_fences(text: str) -> str:
@@ -49,6 +57,32 @@ def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
 
 # ----------------------------- nodes -----------------------------
 
+def planner_node(state: AgentState) -> dict:
+    """Decompose a multi-hop question into focused sub-questions.
+
+    Simple, single-fact questions pass through as a one-element list (no extra
+    fan-out). Complex/comparative questions are split so each facet retrieves its
+    own evidence in parallel — the generator still answers the original question.
+    """
+    question = state["question"]
+    prompt = (
+        "You break a study question into the minimal set of standalone sub-questions "
+        "needed to answer it from a document library.\n"
+        "If the question is already a single, focused ask, return it unchanged as the only element.\n"
+        f"Return ONLY a JSON array of {MAX_SUBQ} or fewer short sub-question strings. No prose, no code fences.\n\n"
+        f"Question: {question}\n\n"
+        "JSON array:"
+    )
+    try:
+        picked = json.loads(_strip_fences(ask_gemini(prompt)))
+        subs = [str(s).strip() for s in picked if str(s).strip()][:MAX_SUBQ]
+    except Exception:
+        subs = []
+    if not subs:
+        subs = [question]
+    return {"sub_questions": subs}
+
+
 def router_node(state: AgentState) -> dict:
     """Pick which documents are relevant. Falls back to all docs if uncertain."""
     docs = list_documents()
@@ -62,11 +96,16 @@ def router_node(state: AgentState) -> dict:
         f"summary={(d.get('summary') or {}).get('one_sentence_explanation', '')}"
         for d in docs
     )
+    sub_block = ""
+    subs = state.get("sub_questions") or []
+    if len(subs) > 1:
+        sub_block = "\nSub-questions to cover:\n" + "\n".join(f"  - {s}" for s in subs) + "\n"
     prompt = (
         "You are a router that picks relevant documents for a question.\n"
         "Return ONLY a JSON array of doc_id strings, no prose, no code fences.\n"
         "If unsure, include more rather than fewer.\n\n"
-        f"Available documents:\n{catalog}\n\n"
+        f"Available documents:\n{catalog}\n"
+        f"{sub_block}\n"
         f"Question: {state['question']}\n\n"
         "JSON array of doc_ids:"
     )
@@ -83,20 +122,33 @@ def router_node(state: AgentState) -> dict:
 
 
 def fan_out_to_retrievers(state: AgentState):
-    """Send the current query to one retriever per routed doc."""
-    query = state.get("query") or state["question"]
-    if not state.get("doc_ids"):
-        return [Send("retriever", {"query": query, "doc_id": None})]
+    """Fan out one retriever per (sub-question x routed doc).
+
+    First pass: retrieve every planner sub-question against every routed doc, so
+    multi-hop questions gather evidence for each facet in parallel.
+    Retry pass: the rewriter has narrowed `query` to target the missing evidence,
+    so we re-retrieve just that focused query (avoids re-fanning the whole plan).
+    """
+    on_retry = state.get("retry_count", 0) > 0 and state.get("query")
+    if on_retry:
+        queries = [state["query"]]
+    else:
+        queries = state.get("sub_questions") or [state.get("query") or state["question"]]
+
+    doc_ids = state.get("doc_ids") or [None]
+    # fewer chunks per retriever when the fan-out is wide, to bound generator context
+    k = 3 if len(queries) * len(doc_ids) > 4 else 4
     return [
-        Send("retriever", {"query": query, "doc_id": d})
-        for d in state["doc_ids"]
+        Send("retriever", {"query": q, "doc_id": d, "k": k})
+        for q in queries
+        for d in doc_ids
     ]
 
 
 def retriever_node(payload: dict) -> dict:
     """Retrieve top-k chunks from one document (or all if doc_id is None)."""
     doc_ids = [payload["doc_id"]] if payload.get("doc_id") else None
-    chunks = retrieve(payload["query"], doc_ids=doc_ids, k=4)
+    chunks = retrieve(payload["query"], doc_ids=doc_ids, k=payload.get("k", 4))
     return {"chunks": chunks}
 
 
