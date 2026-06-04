@@ -55,6 +55,18 @@ def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
     return out
 
 
+def _prepare_chunks(chunks: list[dict]) -> list[dict]:
+    """Canonical, deterministic chunk list shared by the generator and critic so
+    that [N] citation indices line up. External (tool) chunks are kept first;
+    internal chunks follow, ranked by similarity; the list is capped to bound
+    generator context after a wide sub-question fan-out."""
+    deduped = _dedupe_chunks(chunks)
+    external = [c for c in deduped if c.get("source") == "external"]
+    internal = [c for c in deduped if c.get("source") != "external"]
+    internal.sort(key=lambda c: c["distance"] if c.get("distance") is not None else float("inf"))
+    return (external + internal)[:MAX_CONTEXT_CHUNKS]
+
+
 # ----------------------------- nodes -----------------------------
 
 def planner_node(state: AgentState) -> dict:
@@ -154,7 +166,7 @@ def retriever_node(payload: dict) -> dict:
 
 def generator_node(state: AgentState) -> dict:
     """Generate an answer with inline [N] citations indexed to chunks."""
-    chunks = _dedupe_chunks(state.get("chunks", []))
+    chunks = _prepare_chunks(state.get("chunks", []))
     if not chunks:
         return {
             "answer": "I couldn't find anything in your library that addresses this question.",
@@ -227,7 +239,7 @@ def _extract_claims(answer: str) -> list[dict]:
 
 def critic_node(state: AgentState) -> dict:
     """Verify every cited claim actually appears in its referenced chunk."""
-    chunks = _dedupe_chunks(state.get("chunks", []))
+    chunks = _prepare_chunks(state.get("chunks", []))
     answer = state.get("answer", "")
     extracted = _extract_claims(answer)
 
@@ -317,30 +329,54 @@ def query_rewriter_node(state: AgentState) -> dict:
     return {"query": new_q}
 
 
+def external_tools_node(state: AgentState) -> dict:
+    """ReAct fallback: the internal library couldn't verify the answer, so the
+    agent reasons about which external tool fits the gap, calls it, and merges
+    the results into the chunk pool for one more generate->verify pass."""
+    failed = state.get("failed_claims") or []
+    choice = select_tool(state["question"], failed)
+    results = run_tool(choice["tool"], choice["query"])
+    # Re-seed the retrieval query so the rewriter/critic context reflects the pivot.
+    return {
+        "chunks": results,
+        "external_used": True,
+        "tool_used": {**choice, "results": len(results)},
+        # clear stale failures so the next generator pass starts fresh on the merged pool
+        "failed_claims": [],
+    }
+
+
 def critic_decides(state: AgentState) -> str:
     if state.get("verified"):
         return END
-    if state.get("retry_count", 0) >= MAX_RETRIES:
-        return END
-    return "rewriter"
+    if state.get("retry_count", 0) < MAX_RETRIES:
+        return "rewriter"
+    # Retries against the internal library are spent. Try reaching outside once.
+    if not state.get("external_used"):
+        return "external_tools"
+    return END
 
 
 # ----------------------------- graph -----------------------------
 
 def build_graph():
     g = StateGraph(AgentState)
+    g.add_node("planner", planner_node)
     g.add_node("router", router_node)
     g.add_node("retriever", retriever_node)
     g.add_node("generator", generator_node)
     g.add_node("critic", critic_node)
     g.add_node("rewriter", query_rewriter_node)
+    g.add_node("external_tools", external_tools_node)
 
-    g.add_edge(START, "router")
+    g.add_edge(START, "planner")
+    g.add_edge("planner", "router")
     g.add_conditional_edges("router", fan_out_to_retrievers, ["retriever"])
     g.add_edge("retriever", "generator")
     g.add_edge("generator", "critic")
-    g.add_conditional_edges("critic", critic_decides, [END, "rewriter"])
+    g.add_conditional_edges("critic", critic_decides, [END, "rewriter", "external_tools"])
     g.add_conditional_edges("rewriter", fan_out_to_retrievers, ["retriever"])
+    g.add_edge("external_tools", "generator")
 
     return g.compile()
 
@@ -356,9 +392,12 @@ def answer_question(question: str) -> dict:
         "consulted": final.get("consulted", []),
         "chunks": final.get("chunks", []),
         "routed_doc_ids": final.get("doc_ids", []),
+        "sub_questions": final.get("sub_questions", []),
         "citations": final.get("citations", []),
         "verified": final.get("verified", False),
         "retry_count": final.get("retry_count", 0),
+        "external_used": final.get("external_used", False),
+        "tool_used": final.get("tool_used", {}),
     }
 
 
@@ -369,9 +408,19 @@ def stream_answer(question: str):
     for update in _compiled.stream(initial, stream_mode="updates"):
         for node, partial in update.items():
             event: dict = {"node": node}
-            if node == "router":
+            if node == "planner":
+                subs = partial.get("sub_questions", [])
+                event["sub_questions"] = subs
+                event["multi"] = len(subs) > 1
+            elif node == "router":
                 event["doc_ids"] = partial.get("doc_ids", [])
                 event["query"] = partial.get("query")
+            elif node == "external_tools":
+                tool = partial.get("tool_used", {})
+                event["tool"] = tool.get("tool")
+                event["query"] = tool.get("query")
+                event["reason"] = tool.get("reason")
+                event["results"] = tool.get("results", 0)
             elif node == "retriever":
                 event["chunks_added"] = len(partial.get("chunks", []))
             elif node == "generator":
