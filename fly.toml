@@ -1,0 +1,28 @@
+# Fly.io config for the NoteHelper Flask backend.
+# Run `fly launch --no-deploy` once to claim a unique app name, then adjust below.
+app = "notehelper-api"
+primary_region = "iad"  # pick a region near you: fly platform regions
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # ChromaDB persists here, on the mounted volume (see [mounts]).
+  CHROMA_PERSIST_DIR = "/data/chroma_db"
+
+# Persistent volume so uploaded PDFs + embeddings survive restarts.
+# Create it once with: fly volumes create notehelper_data --size 1 --region iad
+[mounts]
+  source = "notehelper_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0  # scale to zero when idle to stay within free allowance
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"  # chromadb/onnxruntime needs headroom; 256mb will OOM

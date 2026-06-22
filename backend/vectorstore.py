@@ -10,8 +10,10 @@ from google import genai
 
 load_dotenv()
 
-_PERSIST_DIR = Path(__file__).parent.parent / "chroma_db"
-_PERSIST_DIR.mkdir(exist_ok=True)
+# Override with CHROMA_PERSIST_DIR in production (e.g. a Fly.io volume at /data/chroma_db)
+# so the vector store survives restarts. Defaults to the repo-local folder for dev.
+_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", Path(__file__).parent.parent / "chroma_db"))
+_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 _DOC_INDEX_PATH = _PERSIST_DIR / "documents.json"
 _COLLECTION_NAME = "library"
 _EMBED_MODEL = "gemini-embedding-001"

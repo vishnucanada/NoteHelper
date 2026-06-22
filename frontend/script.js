@@ -1,4 +1,6 @@
-const API_BASE = 'http://127.0.0.1:5000';
+// Set window.API_BASE in config.js to point at the deployed backend.
+// Falls back to the local Flask server for development.
+const API_BASE = window.API_BASE || 'http://127.0.0.1:5000';
 
 document.addEventListener('DOMContentLoaded', () => {
     const uploadArea    = document.getElementById('uploadArea');

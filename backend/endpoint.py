@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 from flask import Flask, Response, jsonify, request, stream_with_context
@@ -15,12 +16,18 @@ from vectorstore import (
 )
 
 app = Flask(__name__)
-CORS(app, origins=[
+
+# Local dev origins, plus any production frontends from FRONTEND_ORIGINS
+# (comma-separated, e.g. "https://notehelper.vercel.app").
+_allowed_origins = [
     "http://127.0.0.1:5500",
     "http://localhost:5500",
     "http://127.0.0.1:5000",
     "http://localhost:5000",
-])
+]
+_extra = os.getenv("FRONTEND_ORIGINS", "")
+_allowed_origins += [o.strip() for o in _extra.split(",") if o.strip()]
+CORS(app, origins=_allowed_origins)
 
 
 def _clean_json(text: str) -> str:
