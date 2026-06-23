@@ -9,6 +9,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="images/icon.png" type="image/png">
+    <!-- PDF parsing in the browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+    <!-- Backendless app modules (load in dependency order) -->
+    <script src="lib/util.js" defer></script>
+    <script src="lib/apikey.js" defer></script>
+    <script src="lib/gemini.js" defer></script>
+    <script src="lib/chunker.js" defer></script>
+    <script src="lib/store.js" defer></script>
+    <script src="lib/tools.js" defer></script>
+    <script src="lib/agent.js" defer></script>
     <script src="config.js" defer></script>
     <script src="script.js" defer></script>
 </head>
@@ -45,7 +55,8 @@
 
             <div class="sidebar-footer">
                 <span class="status-dot"></span>
-                <span>Backend ready</span>
+                <span>Runs in your browser</span>
+                <button id="settingsBtn" class="settings-btn" title="API key settings">🔑 Key</button>
             </div>
         </aside>
 
