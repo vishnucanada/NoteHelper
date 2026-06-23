@@ -1,6 +1,6 @@
-// Set window.API_BASE in config.js to point at the deployed backend.
-// Falls back to the local Flask server for development.
-const API_BASE = window.API_BASE || 'http://127.0.0.1:5000';
+// Backendless: all work happens in the browser via the NH.* modules
+// (lib/agent.js, lib/store.js, lib/gemini.js, lib/chunker.js, lib/apikey.js).
+const NH = window.NH;
 
 document.addEventListener('DOMContentLoaded', () => {
     const uploadArea    = document.getElementById('uploadArea');
@@ -12,6 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const askBtn        = document.getElementById('askBtn');
     const thread        = document.getElementById('thread');
     const welcome       = document.getElementById('welcome');
+    const settingsBtn   = document.getElementById('settingsBtn');
+
+    /* ---------- API key ---------- */
+    settingsBtn?.addEventListener('click', () => NH.apikey.openModal());
+    // Prompt for the key on first run so the app is usable immediately.
+    NH.apikey.promptIfMissing();
 
     /* ---------- upload ---------- */
     uploadArea.addEventListener('click', () => fileInput.click());
@@ -64,13 +70,14 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         uploadQueue.appendChild(row);
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetch(`${API_BASE}/message`, { method: 'POST', body: formData });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || `Server error: ${res.status}`);
+            if (!NH.apikey.has()) { NH.apikey.openModal(); throw new Error('add your API key first'); }
+            const docId = NH.chunker.newDocId();
+            const { chunks, fullText } = await NH.chunker.chunkPdf(file, docId, file.name);
+            if (!chunks.length) throw new Error('Could not extract text from PDF');
+            const summary = await NH.gemini.summarizeThis(fullText);
+            await NH.store.addDocument(docId, file.name, summary, chunks);
             row.className = 'queue-row done';
-            row.querySelector('.queue-status').textContent = `✓ ${result.data.num_chunks} chunks`;
+            row.querySelector('.queue-status').textContent = `✓ ${chunks.length} chunks`;
             row.querySelector('.queue-status').classList.remove('shimmer-text');
             setTimeout(() => row.remove(), 3500);
         } catch (err) {
@@ -82,9 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshLibrary() {
         try {
-            const res = await fetch(`${API_BASE}/documents`);
-            const result = await res.json();
-            const docs = result.documents || [];
+            const docs = await NH.store.listDocuments();
             libraryCount.textContent = docs.length;
             if (docs.length === 0) {
                 libraryList.innerHTML = '<p class="empty-state">No documents yet.</p>';
@@ -119,11 +124,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p><strong>Brief:</strong> ${escapeHtml(summary.brief_summary || '—')}</p>
                 <p><strong>Takeaways:</strong><br>${takeaways || '—'}</p>
                 <p class="doc-meta">${doc.num_chunks} chunks · <code>${doc.doc_id}</code></p>
+                <button class="doc-quiz" type="button" data-doc-id="${doc.doc_id}">🧠 Generate quiz</button>
+                <div class="doc-quiz-out" data-quiz-out hidden></div>
             </details>
         `;
         card.querySelector('.doc-delete').addEventListener('click', (e) => {
             e.stopPropagation();
             deleteDoc(doc.doc_id);
+        });
+        card.querySelector('.doc-quiz').addEventListener('click', (e) => {
+            e.stopPropagation();
+            generateQuiz(doc, card.querySelector('[data-quiz-out]'));
         });
         return card;
     }
@@ -131,11 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function deleteDoc(docId) {
         if (!confirm('Remove this document from your library?')) return;
         try {
-            const res = await fetch(`${API_BASE}/documents/${docId}`, { method: 'DELETE' });
-            if (!res.ok) {
-                const r = await res.json();
-                throw new Error(r.error || `Server error: ${res.status}`);
-            }
+            await NH.store.deleteDocument(docId);
             await refreshLibrary();
         } catch (err) {
             flash(`Delete failed: ${err.message}`, 'error');
@@ -210,7 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            await streamSSE(`${API_BASE}/followup`, { question }, (evt) => {
+            if (!NH.apikey.has()) { NH.apikey.openModal(); throw new Error('add your API key to ask questions'); }
+            await NH.agent.runAgent(question, (evt) => {
                 switch (evt.node) {
                     case 'router':
                         markDone('router', `🧭 routed → ${evt.doc_ids.length} doc${evt.doc_ids.length === 1 ? '' : 's'}`);
@@ -379,43 +387,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // preserve newlines as <br>
         html = html.replace(/\n/g, '<br>');
         return html;
-    }
-
-    /* ---------- SSE consumer ---------- */
-    async function streamSSE(url, body, onEvent) {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!res.ok || !res.body) {
-            let msg = `Server error: ${res.status}`;
-            try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
-            throw new Error(msg);
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            let idx;
-            while ((idx = buffer.indexOf('\n\n')) >= 0) {
-                const frame = buffer.slice(0, idx);
-                buffer = buffer.slice(idx + 2);
-                const lines = frame.split('\n').filter(l => l.startsWith('data:'));
-                for (const line of lines) {
-                    const payload = line.slice(5).trim();
-                    if (!payload) continue;
-                    try {
-                        onEvent(JSON.parse(payload));
-                    } catch (e) {
-                        console.warn('Bad SSE chunk:', payload, e);
-                    }
-                }
-            }
-        }
     }
 
     /* ---------- utility ---------- */
