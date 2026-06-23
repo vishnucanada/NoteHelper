@@ -49,6 +49,48 @@ document.addEventListener('DOMContentLoaded', () => {
     askBtn.addEventListener('click', askQuestion);
 
     refreshLibrary();
+    restoreHistory();
+
+    /* ---------- chat history (persisted in IndexedDB) ---------- */
+    async function restoreHistory() {
+        let turns = [];
+        try { turns = await NH.store.listChatTurns(); } catch (_) { return; }
+        if (!turns.length) return;
+        welcome?.remove();
+        for (const saved of turns) {
+            const turn = document.createElement('div');
+            turn.className = 'qa-turn';
+            turn.innerHTML = `
+                <div class="qa-question">${escapeHtml(saved.question || '')}</div>
+                <div class="qa-answer" data-turn>
+                    <div class="answer-body" data-answer></div>
+                    <div data-retry hidden></div>
+                    <div data-tail></div>
+                </div>`;
+            thread.appendChild(turn);
+            renderFinal(turn, {
+                finalAnswer: saved.answer || '',
+                finalCitations: saved.citations || [],
+                finalConsulted: saved.consulted || [],
+                lastCritic: { verified: saved.verified, citations: saved.citations || [], retry_count: saved.retry_count || 0 },
+            }, { persist: false });
+        }
+        scrollToBottom();
+    }
+
+    function turnToMarkdown(question, answer, citations, consulted) {
+        let md = `## ${question}\n\n${answer}\n`;
+        if (consulted && consulted.length) {
+            md += `\n**Consulted:** ${consulted.map(c => c.filename).join(', ')}\n`;
+        }
+        if (citations && citations.length) {
+            md += `\n### Citations\n`;
+            for (const c of citations) {
+                md += `- [${c.n}] ${c.filename || '?'}${c.page ? ' p.' + c.page : ''} — ${c.supported ? 'supported' : 'unsupported'}: ${c.claim}\n`;
+            }
+        }
+        return md;
+    }
 
     /* ---------- upload handlers ---------- */
     async function handleFiles(files) {
@@ -149,7 +191,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /* ---------- Q&A: SSE-streamed graph ---------- */
+    /* ---------- per-document quiz generation ---------- */
+    async function generateQuiz(doc, outEl) {
+        if (!NH.apikey.has()) { NH.apikey.openModal(); return; }
+        outEl.hidden = false;
+        outEl.innerHTML = '<span class="shimmer-text">Generating quiz…</span>';
+        const s = doc.summary || {};
+        const takeaways = Array.isArray(s.key_take_aways) ? s.key_take_aways.join('; ') : (s.key_take_aways || '');
+        const prompt =
+            'Create 5 short study quiz questions with answers based on this document. ' +
+            "Return ONLY valid JSON: an array of objects with keys 'q' and 'a'. No prose, no code fences.\n\n" +
+            `Title: ${doc.filename}\n` +
+            `Summary: ${s.brief_summary || s.one_sentence_explanation || ''}\n` +
+            `Key points: ${takeaways}`;
+        try {
+            const items = NH.safeJson(await NH.gemini.askGemini(prompt));
+            if (!Array.isArray(items) || !items.length) throw new Error('no questions returned');
+            outEl.innerHTML = items.map((it, i) => `
+                <details class="quiz-item">
+                    <summary>${i + 1}. ${escapeHtml(it.q || '')}</summary>
+                    <p>${escapeHtml(it.a || '')}</p>
+                </details>`).join('');
+        } catch (err) {
+            outEl.innerHTML = `<span class="error-state">Quiz failed: ${escapeHtml(err.message)}</span>`;
+        }
+    }
+
+    /* ---------- Q&A: agentic graph (in-browser) ---------- */
     async function askQuestion() {
         const question = questionInput.value.trim();
         if (!question || askBtn.disabled) return;
@@ -287,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderFinal(turn, ctx) {
+    function renderFinal(turn, ctx, opts = {}) {
         if (turn.classList.contains('rendered')) return;
         turn.classList.add('rendered');
         const answerEl = turn.querySelector('[data-turn]');
@@ -334,7 +402,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 `).join('')}
             </div>` : '';
 
-        tailEl.innerHTML = consultedHtml + citationsHtml;
+        const actionsHtml = `<div class="turn-actions"><button class="copy-md" type="button" data-action="copy-md">⧉ Copy as Markdown</button></div>`;
+        tailEl.innerHTML = consultedHtml + citationsHtml + actionsHtml;
+
+        // Copy-as-Markdown
+        const question = turn.querySelector('.qa-question')?.textContent || '';
+        const copyBtn = tailEl.querySelector('[data-action="copy-md"]');
+        copyBtn?.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(turnToMarkdown(question, ctx.finalAnswer, cits, ctx.finalConsulted));
+            copyBtn.textContent = '✓ Copied';
+            setTimeout(() => { copyBtn.textContent = '⧉ Copy as Markdown'; }, 1800);
+        });
+
+        // Persist this turn so the thread restores on reload (skip when replaying history)
+        if (opts.persist !== false) {
+            NH.store.saveChatTurn({
+                question,
+                answer: ctx.finalAnswer,
+                citations: ctx.finalCitations,
+                consulted: ctx.finalConsulted,
+                verified: critic ? critic.verified : false,
+                retry_count: critic ? critic.retry_count : 0,
+            }).catch(() => {});
+        }
 
         const citsToggle = tailEl.querySelector('[data-action="toggle-cits"]');
         if (citsToggle) {
