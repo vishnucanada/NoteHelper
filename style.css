@@ -1,32 +1,33 @@
 /* ============ TOKENS ============ */
+/* Paper / Academic — warm off-white "paper" surfaces, dark ink, restrained indigo. */
 :root {
-    --bg:           #0a0a12;
-    --panel:        #11111c;
-    --panel-2:      #161624;
-    --panel-3:      #1c1c2e;
-    --border:       #25253a;
-    --border-soft:  #1d1d2c;
+    --bg:           #faf8f3;   /* warm paper */
+    --panel:        #ffffff;   /* cards / answer bubbles */
+    --panel-2:      #f4f1e9;   /* subtle paper (cards, pills) */
+    --panel-3:      #ece8dd;   /* hover / inset */
+    --border:       #ddd5c6;
+    --border-soft:  #e7e1d4;
 
-    --text:         #e8e8f0;
-    --text-muted:   #8e8eaa;
-    --text-dim:     #5a5a72;
+    --text:         #2b2b2b;   /* ink */
+    --text-muted:   #6b6b6b;
+    --text-dim:     #9a9384;   /* warm gray */
 
-    --accent:       #a78bfa;
-    --accent-2:     #c4b5fd;
-    --accent-deep:  #7c3aed;
-    --accent-bg:    rgba(167, 139, 250, 0.12);
-    --accent-glow:  rgba(167, 139, 250, 0.35);
+    --accent:       #4f46e5;   /* indigo */
+    --accent-2:     #4338ca;   /* deeper indigo — legible as small text on white */
+    --accent-deep:  #3730a3;   /* gradient end */
+    --accent-bg:    rgba(79, 70, 229, 0.10);
+    --accent-glow:  rgba(79, 70, 229, 0.22);
 
-    --success:      #34d399;
-    --danger:       #f87171;
-    --warning:      #fbbf24;
+    --success:      #059669;
+    --danger:       #dc2626;
+    --warning:      #b45309;
 
     --sidebar-w:    320px;
     --radius:       14px;
     --radius-sm:    8px;
 
-    --shadow-1:     0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.35);
-    --shadow-2:     0 8px 32px rgba(0,0,0,0.5);
+    --shadow-1:     0 1px 2px rgba(43,43,43,0.04), 0 4px 12px rgba(43,43,43,0.06);
+    --shadow-2:     0 12px 40px rgba(43,43,43,0.14);
 
     --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -50,8 +51,8 @@ html, body {
 
 body {
     background:
-        radial-gradient(1000px 600px at 90% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
-        radial-gradient(800px 500px at -10% 100%, rgba(167, 139, 250, 0.06), transparent 60%),
+        radial-gradient(1100px 650px at 92% -12%, rgba(79, 70, 229, 0.05), transparent 60%),
+        radial-gradient(900px 520px at -10% 110%, rgba(180, 140, 70, 0.06), transparent 60%),
         var(--bg);
 }
 
@@ -62,8 +63,8 @@ button, input, textarea {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #20203a; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: #2c2c4a; background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb { background: #d8d0c1; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #c4bbaa; background-clip: padding-box; border: 2px solid transparent; }
 
 /* ============ LAYOUT ============ */
 .app {
@@ -123,7 +124,7 @@ button, input, textarea {
 }
 
 .upload-area {
-    border: 1.5px dashed #34344e;
+    border: 1.5px dashed var(--border);
     border-radius: var(--radius);
     padding: 18px 14px;
     text-align: center;
@@ -237,8 +238,8 @@ button, input, textarea {
     position: relative;
 }
 .doc-card:hover {
-    border-color: #2e2e44;
-    background: var(--panel-3);
+    border-color: var(--border);
+    background: var(--panel-2);
 }
 .doc-card.consulted {
     border-color: var(--accent);
@@ -355,7 +356,7 @@ button, input, textarea {
 .topbar {
     padding: 18px 28px;
     border-bottom: 1px solid var(--border-soft);
-    background: rgba(11, 11, 20, 0.7);
+    background: rgba(250, 248, 243, 0.8);
     backdrop-filter: blur(10px);
     flex-shrink: 0;
 }
@@ -531,7 +532,7 @@ button, input, textarea {
     border-radius: 10px;
     font-size: 11.5px;
     font-weight: 500;
-    border: 1px solid rgba(167, 139, 250, 0.25);
+    border: 1px solid rgba(79, 70, 229, 0.22);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -676,7 +677,7 @@ sup.cite.cite-bad {
 .composer {
     padding: 16px 28px 22px;
     border-top: 1px solid var(--border-soft);
-    background: rgba(11, 11, 20, 0.85);
+    background: rgba(250, 248, 243, 0.88);
     backdrop-filter: blur(10px);
     flex-shrink: 0;
 }
