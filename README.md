@@ -1,4 +1,4 @@
-# Note Helper 🤖📝
+# Note Helper 
 
 **Note Helper** is an agentic, multi-document study assistant that runs **entirely in your browser**. Upload an entire semester of PDFs and ask questions across your whole library — an in-browser agent routes each question to the relevant documents, retrieves the right chunks from a local vector store, and synthesizes a grounded, cited answer.
 
@@ -6,7 +6,7 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
 
 > Built on **vanilla JS + IndexedDB + pdf.js + Gemini**. The original Flask/LangGraph/ChromaDB server lives in [`legacy/`](legacy/) for reference.
 
-## ✨ Features
+## Features
 
 - **100% client-side & private:** PDFs never leave your machine. Parsing, embeddings, vector search, and the agent loop all run in the browser; only Gemini API calls go out, using *your* key.
 - **Multi-document library:** Upload as many PDFs as you want. Each is parsed with pdf.js, chunked, embedded with `gemini-embedding-001`, and persisted to **IndexedDB**.
@@ -18,7 +18,7 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
 - **Persisted chat history:** Q&A turns are saved to IndexedDB and restored on reload.
 - **Quiz generation & Markdown export:** Generate study questions per document, and copy any answer (with citations) as Markdown.
 
-## 🏗️ Architecture (backendless)
+## Architecture (backendless)
 
 ```
   Browser only (static page on GitHub Pages)
@@ -34,7 +34,7 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
 
 The agent (`frontend/lib/agent.js`) runs the same pipeline the old LangGraph server did, emitting the same event objects the UI already knew how to render.
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 NoteHelper/                   # the static app lives at the repo root
@@ -54,7 +54,7 @@ NoteHelper/                   # the static app lives at the repo root
 └── legacy/                   # archived Flask/LangGraph/ChromaDB server (reference)
 ```
 
-## 🛠️ Run it locally
+## Run it locally
 
 The app must be served over **http** (not `file://`) so pdf.js workers and IndexedDB work:
 
@@ -71,7 +71,7 @@ your browser's `localStorage`. Upload a few PDFs, then ask away.
 > Tip: in the Google console, restrict your API key to an HTTP referrer (your Pages
 > domain) so it can't be reused elsewhere.
 
-## 🚀 Deploy to GitHub Pages
+## Deploy to GitHub Pages
 
 The app sits at the repo root, so either deploy path works:
 
@@ -80,7 +80,7 @@ The app sits at the repo root, so either deploy path works:
 
 Then open `https://<user>.github.io/<repo>/` and add your key. No Fly.io, no Vercel, no container.
 
-## ⚠️ Notes
+## Notes
 
 - **arXiv CORS:** `export.arxiv.org` sends no CORS headers, so the external-tools branch uses **Wikipedia** by default. Flip `ENABLE_ARXIV` in `config.js` only if you proxy arXiv through a CORS-enabled host.
 - **Your key, your quota:** every user brings their own Gemini key; there's no shared server-side secret.

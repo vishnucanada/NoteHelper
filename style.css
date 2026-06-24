@@ -12,11 +12,11 @@
     --text-muted:   #6b6b6b;
     --text-dim:     #9a9384;   /* warm gray */
 
-    --accent:       #4f46e5;   /* indigo */
-    --accent-2:     #4338ca;   /* deeper indigo — legible as small text on white */
-    --accent-deep:  #3730a3;   /* gradient end */
-    --accent-bg:    rgba(79, 70, 229, 0.10);
-    --accent-glow:  rgba(79, 70, 229, 0.22);
+    --accent:       #1e3a5f;
+    --accent-2:     #17304f;
+    --accent-deep:  #11263d;
+    --accent-bg:    rgba(30, 58, 95, 0.10);
+    --accent-glow:  rgba(30, 58, 95, 0.18);
 
     --success:      #059669;
     --danger:       #dc2626;
