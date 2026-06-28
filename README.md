@@ -85,7 +85,28 @@ The app sits at the repo root, so either deploy path works:
 
 Then open `https://<user>.github.io/<repo>/` and add your key. No Fly.io, no Vercel, no container.
 
+## Development
+
+The app ships as plain static files — no build step is needed to run it. Tooling is
+only for quality checks:
+
+```bash
+npm install        # dev tooling (Vitest, ESLint, Prettier)
+npm test           # unit tests for the pure logic (splitter, cosine, citation parsing)
+npm run lint       # ESLint over lib/, script.js, config.js
+npm run format     # Prettier (optional; not enforced in CI)
+```
+
+- **Tests** ([`test/`](test/)) cover the algorithmic core: the recursive character
+  splitter (`lib/chunker.js`), cosine distance / JSON helpers (`lib/util.js`), and the
+  citation parsing + chunk-prep used by the critic (`lib/agent.js`). The browser modules
+  expose these pure helpers under a Node-only `module.exports` guard so they can be unit
+  tested without a DOM.
+- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint + tests on
+  every push and PR; [`pages.yml`](.github/workflows/pages.yml) deploys to GitHub Pages.
+
 ## Notes
 
 - **arXiv CORS:** `export.arxiv.org` sends no CORS headers, so the external-tools branch uses **Wikipedia** by default. Flip `ENABLE_ARXIV` in `config.js` only if you proxy arXiv through a CORS-enabled host.
 - **Your key, your quota:** every user brings their own Gemini key; there's no shared server-side secret.
+- **Retrieval quality:** chunks are embedded with `taskType=RETRIEVAL_DOCUMENT` and queries with `RETRIEVAL_QUERY`; the fan-out embeds each unique sub-question once and reuses the vector across routed documents.
