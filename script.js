@@ -11,8 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const questionInput = document.getElementById('questionInput');
     const askBtn        = document.getElementById('askBtn');
     const thread        = document.getElementById('thread');
-    const welcome       = document.getElementById('welcome');
     const settingsBtn   = document.getElementById('settingsBtn');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
     /* ---------- API key ---------- */
     settingsBtn?.addEventListener('click', () => NH.apikey.openModal());
@@ -48,15 +48,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     askBtn.addEventListener('click', askQuestion);
 
+    clearHistoryBtn?.addEventListener('click', clearHistory);
+
     refreshLibrary();
     restoreHistory();
 
     /* ---------- chat history (persisted in IndexedDB) ---------- */
+    // Show the "Clear history" control only when the thread actually has turns.
+    function updateClearBtn() {
+        if (!clearHistoryBtn) return;
+        clearHistoryBtn.hidden = !thread.querySelector('.qa-turn');
+    }
+
+    async function clearHistory() {
+        if (!thread.querySelector('.qa-turn')) return;
+        if (!confirm('Clear all chat history? This cannot be undone.')) return;
+        try {
+            await NH.store.clearChatTurns();
+        } catch (err) {
+            flash(`Clear failed: ${err.message}`, 'error');
+            return;
+        }
+        thread.innerHTML = `
+            <div class="welcome" id="welcome">
+                <div class="welcome-icon">📚</div>
+                <h2>Upload PDFs, then ask anything</h2>
+                <p>A router agent picks the right documents from your library, retrievers fetch the matching chunks in parallel, and the synthesizer grounds its answer in what you uploaded.</p>
+                <div class="welcome-chips">
+                    <span class="chip">🧭 Router</span>
+                    <span class="chip">📥 Parallel retrievers</span>
+                    <span class="chip">✨ Synthesizer</span>
+                </div>
+            </div>`;
+        updateClearBtn();
+    }
+
     async function restoreHistory() {
         let turns = [];
         try { turns = await NH.store.listChatTurns(); } catch (_) { return; }
         if (!turns.length) return;
-        welcome?.remove();
+        document.getElementById('welcome')?.remove();
         for (const saved of turns) {
             const turn = document.createElement('div');
             turn.className = 'qa-turn';
@@ -75,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastCritic: { verified: saved.verified, citations: saved.citations || [], retry_count: saved.retry_count || 0 },
             }, { persist: false });
         }
+        updateClearBtn();
         scrollToBottom();
     }
 
@@ -222,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const question = questionInput.value.trim();
         if (!question || askBtn.disabled) return;
 
-        welcome?.remove();
+        document.getElementById('welcome')?.remove();
 
         const turn = document.createElement('div');
         turn.className = 'qa-turn';
@@ -244,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         thread.appendChild(turn);
+        updateClearBtn();
         scrollToBottom();
 
         questionInput.value = '';
