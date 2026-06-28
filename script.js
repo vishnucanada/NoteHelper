@@ -118,7 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (citations && citations.length) {
             md += `\n### Citations\n`;
             for (const c of citations) {
-                md += `- [${c.n}] ${c.filename || '?'}${c.page ? ' p.' + c.page : ''} — ${c.supported ? 'supported' : 'unsupported'}: ${c.claim}\n`;
+                const state = c.unverified ? 'could not verify' : c.supported ? 'supported' : 'unsupported';
+                md += `- [${c.n}] ${c.filename || '?'}${c.page ? ' p.' + c.page : ''} — ${state}: ${c.claim}\n`;
             }
         }
         return md;
@@ -269,6 +270,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function askQuestion() {
         const question = questionInput.value.trim();
         if (!question || askBtn.disabled) return;
+        const MAX_QUESTION_CHARS = 2000;
+        if (question.length > MAX_QUESTION_CHARS) {
+            flash(`Question is too long (max ${MAX_QUESTION_CHARS} characters).`, 'error');
+            return;
+        }
 
         document.getElementById('welcome')?.remove();
 
