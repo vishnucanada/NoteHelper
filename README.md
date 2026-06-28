@@ -1,8 +1,13 @@
 # Note Helper 
 
+[![CI](https://github.com/vishnucanada/NoteHelper/actions/workflows/ci.yml/badge.svg)](https://github.com/vishnucanada/NoteHelper/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Note Helper** is an agentic, multi-document study assistant that runs **entirely in your browser**. Upload an entire semester of PDFs and ask questions across your whole library — an in-browser agent routes each question to the relevant documents, retrieves the right chunks from a local vector store, and synthesizes a grounded, cited answer.
 
 No backend, no server, no hosting bill. The app is fully static (deployable to **GitHub Pages**) and calls the **Gemini API directly with your own key**, which is stored only in your browser.
+
+**▶︎ Live demo:** [vishnucanada.github.io/NoteHelper](https://vishnucanada.github.io/NoteHelper/) — bring your own free [Gemini key](https://aistudio.google.com/apikey).
 
 > Built on **vanilla JS + IndexedDB + pdf.js + Gemini**. The original Flask/LangGraph/ChromaDB server lives in [`legacy/`](legacy/) for reference.
 
