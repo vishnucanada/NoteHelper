@@ -1,0 +1,7 @@
+legacy/
+chroma_db/
+coverage/
+node_modules/
+assets/
+images/
+*.min.js
