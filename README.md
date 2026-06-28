@@ -32,7 +32,7 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
                                                        retries up  └──▶ external tools (Wikipedia) ─▶ (re-generate)
 ```
 
-The agent (`frontend/lib/agent.js`) runs the same pipeline the old LangGraph server did, emitting the same event objects the UI already knew how to render.
+The agent (`lib/agent.js`) runs the same pipeline the old LangGraph server did, emitting the same event objects the UI already knew how to render.
 
 ## Project Structure
 
