@@ -5,3 +5,5 @@ chroma_db/
 .venv/
 node_modules/
 coverage/
+*.claude
+*/.vscode

@@ -125,14 +125,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /* ---------- upload handlers ---------- */
+    const MAX_PDF_MB = 25;
+
     async function handleFiles(files) {
         const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        const skipped = files.length - pdfs.length;
         if (pdfs.length === 0) {
             flash('Only PDF files are supported.', 'error');
             return;
         }
-        for (const file of pdfs) await uploadOne(file);
+        if (skipped > 0) flash(`Skipped ${skipped} non-PDF file${skipped === 1 ? '' : 's'}.`, 'error');
+
+        let failures = 0;
+        for (const file of pdfs) {
+            const ok = await uploadOne(file);
+            if (!ok) failures += 1;
+        }
         await refreshLibrary();
+        // Surface a summary when several uploads failed — individual rows are easy to miss.
+        if (failures > 1) flash(`${failures} of ${pdfs.length} uploads failed.`, 'error');
     }
 
     async function uploadOne(file) {
@@ -144,6 +155,9 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         uploadQueue.appendChild(row);
         try {
+            if (file.size > MAX_PDF_MB * 1024 * 1024) {
+                throw new Error(`too large (max ${MAX_PDF_MB} MB)`);
+            }
             if (!NH.apikey.has()) { NH.apikey.openModal(); throw new Error('add your API key first'); }
             const docId = NH.chunker.newDocId();
             const { chunks, fullText } = await NH.chunker.chunkPdf(file, docId, file.name);
@@ -154,10 +168,12 @@ document.addEventListener('DOMContentLoaded', () => {
             row.querySelector('.queue-status').textContent = `✓ ${chunks.length} chunks`;
             row.querySelector('.queue-status').classList.remove('shimmer-text');
             setTimeout(() => row.remove(), 3500);
+            return true;
         } catch (err) {
             row.className = 'queue-row error';
             row.querySelector('.queue-status').textContent = `✗ ${err.message}`;
             row.querySelector('.queue-status').classList.remove('shimmer-text');
+            return false;
         }
     }
 
@@ -403,11 +419,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Verification badge
         const critic = ctx.lastCritic;
-        const badgeHtml = critic
-            ? (critic.verified
-                ? `<span class="verify-badge ok">✓ verified · ${critic.citations.length} citation${critic.citations.length === 1 ? '' : 's'}</span>`
-                : `<span class="verify-badge warn">⚠ best-effort · ${critic.retry_count} retr${critic.retry_count === 1 ? 'y' : 'ies'} used</span>`)
-            : '';
+        const unverifiedCount = (ctx.finalCitations || []).filter((c) => c.unverified).length;
+        let badgeHtml = '';
+        if (critic) {
+            if (critic.verified && unverifiedCount === 0) {
+                badgeHtml = `<span class="verify-badge ok">✓ verified · ${critic.citations.length} citation${critic.citations.length === 1 ? '' : 's'}</span>`;
+            } else if (critic.verified) {
+                // Passed, but some claims couldn't actually be checked (verifier errored).
+                badgeHtml = `<span class="verify-badge warn">⚠ best-effort · ${unverifiedCount} citation${unverifiedCount === 1 ? '' : 's'} couldn't be checked</span>`;
+            } else {
+                badgeHtml = `<span class="verify-badge warn">⚠ best-effort · ${critic.retry_count} retr${critic.retry_count === 1 ? 'y' : 'ies'} used</span>`;
+            }
+        }
 
         // Consulted docs
         const consultedHtml = ctx.finalConsulted.length ? `
@@ -422,16 +445,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const citationsHtml = cits.length ? `
             <button class="chunks-toggle" data-action="toggle-cits">Show citation evidence (${cits.length})</button>
             <div class="chunks-list" data-cits hidden>
-                ${cits.map(c => `
+                ${cits.map(c => {
+                    const status = c.unverified
+                        ? { cls: 'cite-warn', label: '⚠ could not verify' }
+                        : c.supported
+                            ? { cls: 'cite-ok', label: '✓ supported' }
+                            : { cls: 'cite-bad', label: '✗ unsupported' };
+                    return `
                     <div class="chunk-item ${c.supported ? '' : 'unsupported'}">
                         <div class="chunk-meta">
                             [${c.n}] ${escapeHtml(c.filename || '?')} ${c.page ? '· page ' + c.page : ''}
-                            <span class="${c.supported ? 'cite-ok' : 'cite-bad'}">${c.supported ? '✓ supported' : '✗ unsupported'}</span>
+                            <span class="${status.cls}">${status.label}</span>
                         </div>
                         <div class="cit-claim"><em>Claim:</em> ${escapeHtml(c.claim)}</div>
                         ${c.reason ? `<div class="cit-reason"><em>Note:</em> ${escapeHtml(c.reason)}</div>` : ''}
                     </div>
-                `).join('')}
+                `;
+                }).join('')}
             </div>` : '';
 
         const actionsHtml = `<div class="turn-actions"><button class="copy-md" type="button" data-action="copy-md">⧉ Copy as Markdown</button></div>`;
@@ -499,11 +529,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const parts = nums.split(',').map(s => s.trim());
             return parts.map(n => {
                 const cit = citByN.get(parseInt(n, 10));
-                const ok = cit?.supported !== false;
+                let cls = '';
+                let state = 'supported';
+                if (cit?.unverified) { cls = 'cite-warn'; state = 'could not verify'; }
+                else if (cit?.supported === false) { cls = 'cite-bad'; state = 'unsupported'; }
                 const title = cit
-                    ? `${cit.filename || ''} p.${cit.page || '?'} — ${cit.supported ? 'supported' : 'unsupported'}`
+                    ? `${cit.filename || ''} p.${cit.page || '?'} — ${state}`
                     : `chunk ${n}`;
-                return `<sup class="cite ${ok ? '' : 'cite-bad'}" title="${escapeHtml(title)}">[${n}]</sup>`;
+                return `<sup class="cite ${cls}" title="${escapeHtml(title)}">[${n}]</sup>`;
             }).join('');
         });
         // preserve newlines as <br>
