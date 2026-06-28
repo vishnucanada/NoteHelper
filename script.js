@@ -254,7 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const traceEl  = turn.querySelector('[data-trace]');
         const bodyEl   = turn.querySelector('[data-answer]');
         const retryEl  = turn.querySelector('[data-retry]');
-        const tailEl   = turn.querySelector('[data-tail]');
 
         const ctx = {
             chunksAccumulated: 0,

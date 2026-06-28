@@ -14,13 +14,20 @@ export default [
             sourceType: 'script',
             globals: {
                 ...globals.browser,
-                // Globals the app reads/creates across files.
-                NH: 'writable',
+                // pdf.js loads from a CDN <script>; the export guards reference `module`.
                 pdfjsLib: 'readonly',
+                module: 'readonly',
             },
         },
         rules: {
-            'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+            'no-unused-vars': [
+                'warn',
+                {
+                    argsIgnorePattern: '^_',
+                    caughtErrorsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_',
+                },
+            ],
             'no-empty': ['error', { allowEmptyCatch: true }],
         },
     },

@@ -32,7 +32,13 @@ describe('splitText (recursive character splitter)', () => {
         const giant = 'x'.repeat(CHUNK_SIZE * 2 + 50);
         const out = splitText(giant, SEPARATORS);
         expect(out.length).toBeGreaterThan(1);
-        expect(out.join('')).toBe(giant);
+        for (const c of out) {
+            expect(c.length).toBeLessThanOrEqual(CHUNK_SIZE);
+            expect(c).toMatch(/^x+$/);
+        }
+        // Overlap means the concatenation covers (and slightly exceeds) the original.
+        const totalLen = out.reduce((n, c) => n + c.length, 0);
+        expect(totalLen).toBeGreaterThanOrEqual(giant.length);
     });
 
     it('carries overlap so total output exceeds input length when split', () => {

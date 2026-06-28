@@ -8,7 +8,12 @@ const { extractClaims, dedupeChunks, prepareChunks } = agent;
 describe('extractClaims', () => {
     it('extracts a sentence and its single citation', () => {
         const claims = extractClaims('The sky is blue [1].');
-        expect(claims).toEqual([{ claim: 'The sky is blue', chunk_nums: [1] }]);
+        expect(claims).toEqual([{ claim: 'The sky is blue.', chunk_nums: [1] }]);
+    });
+
+    it('does not leave a floating space before terminal punctuation', () => {
+        const claims = extractClaims('Water is wet [2].');
+        expect(claims[0].claim).toBe('Water is wet.');
     });
 
     it('parses multi-number citations like [1,3]', () => {
@@ -25,7 +30,7 @@ describe('extractClaims', () => {
     it('ignores sentences without citations', () => {
         const claims = extractClaims('This has no citation. But this does [2].');
         expect(claims).toHaveLength(1);
-        expect(claims[0].claim).toBe('But this does');
+        expect(claims[0].claim).toBe('But this does.');
     });
 
     it('returns nothing for an uncited answer', () => {
