@@ -160,11 +160,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`too large (max ${MAX_PDF_MB} MB)`);
             }
             if (!NH.apikey.has()) { NH.apikey.openModal(); throw new Error('add your API key first'); }
+            const statusEl = row.querySelector('.queue-status');
+            const setStatus = (txt) => { statusEl.textContent = txt; };
             const docId = NH.chunker.newDocId();
-            const { chunks, fullText } = await NH.chunker.chunkPdf(file, docId, file.name);
+            const { chunks, fullText } = await NH.chunker.chunkPdf(file, docId, file.name, (stage, cur, total) => {
+                if (stage === 'extracting') setStatus(`extracting page ${cur}/${total}…`);
+            });
             if (!chunks.length) throw new Error('Could not extract text from PDF');
+            setStatus('summarizing…');
             const summary = await NH.gemini.summarizeThis(fullText);
-            await NH.store.addDocument(docId, file.name, summary, chunks);
+            await NH.store.addDocument(docId, file.name, summary, chunks, (stage, cur, total) => {
+                if (stage === 'embedding') setStatus(`embedding ${cur}/${total}…`);
+            });
             row.className = 'queue-row done';
             row.querySelector('.queue-status').textContent = `✓ ${chunks.length} chunks`;
             row.querySelector('.queue-status').classList.remove('shimmer-text');

@@ -22,6 +22,8 @@
     --danger:       #dc2626;
     --warning:      #b45309;
 
+    --topbar-bg:    rgba(250, 248, 243, 0.8);
+
     --sidebar-w:    320px;
     --radius:       14px;
     --radius-sm:    8px;
@@ -31,6 +33,38 @@
 
     --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Dark theme — follows the OS preference. Only the color tokens change; every
+   surface already reads from these variables. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg:           #1a1816;   /* warm near-black */
+        --panel:        #242220;
+        --panel-2:      #2b2825;
+        --panel-3:      #332f2b;
+        --border:       #3a352f;
+        --border-soft:  #2f2b27;
+
+        --text:         #ece8e0;
+        --text-muted:   #a8a298;
+        --text-dim:     #7a746a;
+
+        --accent:       #6f9fd8;   /* lighter indigo for contrast on dark */
+        --accent-2:     #82addf;
+        --accent-deep:  #5e8fc9;
+        --accent-bg:    rgba(111, 159, 216, 0.14);
+        --accent-glow:  rgba(111, 159, 216, 0.22);
+
+        --success:      #34d399;
+        --danger:       #f87171;
+        --warning:      #fbbf24;
+
+        --topbar-bg:    rgba(26, 24, 22, 0.8);
+
+        --shadow-1:     0 1px 2px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.4);
+        --shadow-2:     0 12px 40px rgba(0,0,0,0.55);
+    }
 }
 
 /* ============ BASE ============ */
@@ -356,7 +390,7 @@ button, input, textarea {
 .topbar {
     padding: 18px 28px;
     border-bottom: 1px solid var(--border-soft);
-    background: rgba(250, 248, 243, 0.8);
+    background: var(--topbar-bg);
     backdrop-filter: blur(10px);
     flex-shrink: 0;
     display: flex;
