@@ -14,7 +14,7 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
 ## Features
 
 - **100% client-side & private:** PDFs never leave your machine. Parsing, embeddings, vector search, and the agent loop all run in the browser; only Gemini API calls go out, using *your* key.
-- **Multi-document library:** Upload as many PDFs as you want. Each is parsed with pdf.js, chunked, embedded with `gemini-embedding-001`, and persisted to **IndexedDB**.
+- **Multi-document library:** Upload as many PDFs as you want (up to 25 MB each). Each is parsed with pdf.js, chunked, embedded with `gemini-embedding-001`, and persisted to **IndexedDB**. A per-file progress bar tracks the *extracting* and *embedding* stages, and any document can be deleted from the library with one click.
 - **Router agent:** Each question first hits a router that reads your doc summaries and picks the relevant subset (falls back to the full library when unsure).
 - **Parallel retrieval:** A planner decomposes multi-hop questions; retrieval fans out over (sub-question × routed doc) in parallel and ranks chunks by cosine similarity.
 - **Inline citations + self-correcting critic loop:** The generator emits `[N]` citation tags; a critic verifies each claim against its chunk and, on failure, a rewriter refines the query and loops back (capped at 2 retries).
@@ -38,6 +38,25 @@ No backend, no server, no hosting bill. The app is fully static (deployable to *
 ```
 
 The agent (`lib/agent.js`) runs the same pipeline the old LangGraph server did, emitting the same event objects the UI already knew how to render.
+
+## Configuration
+
+Runtime knobs live in `lib/util.js` (`NH.config`); `config.js` wires up the pdf.js
+worker and overrides any deployment-specific flags. The defaults:
+
+| Key | Default | What it controls |
+| --- | --- | --- |
+| `MODEL` | `gemini-2.5-flash` | Generation model for the agent loop |
+| `EMBED_MODEL` | `gemini-embedding-001` | Embedding model for chunks and queries |
+| `MAX_RETRIES` | `2` | Critic-loop cap (3 generator passes total) |
+| `MAX_SUBQ` | `4` | Most sub-questions the planner may decompose into |
+| `MAX_CONTEXT_CHUNKS` | `12` | Chunks fed to the generator after fan-out |
+| `ENABLE_ARXIV` | `false` | Use arXiv as an external tool (see the CORS note below) |
+| `SUMMARY_TEXT_LIMIT` | `10000` | Chars of a doc sent to the summarizer |
+| `EXTERNAL_TEXT_LIMIT` | `1500` | Chars kept per external-tool result |
+
+UI-side limits live in `script.js`: PDFs are capped at **25 MB** each and questions at
+**2000 characters**.
 
 ## Project Structure
 
